@@ -1,14 +1,8 @@
 export type ToolResult = { ok: boolean; error?: string };
 
-export type OllamaToolCall = {
+export type OpenAIToolCall = {
+  id: string;
   function: { name: string; arguments: unknown };
-};
-
-export type OllamaMessage = {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  tool_name?: string;
-  tool_calls?: OllamaToolCall[];
 };
 
 export type RenderJob = {

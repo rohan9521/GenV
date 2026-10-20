@@ -1,38 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { agentTools, toolInputs } from "../agentTools.js";
-import type { AgentEvent, OllamaMessage } from "../types.js";
+import { toolInputs } from "../agentTools.js";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { AgentEvent } from "../types.js";
 import {
-  OllamaToolSupportError,
-  streamOllamaChat,
-  getOllamaErrorMessage,
-} from "./ollamaClient.js";
+  streamOpenAIChat,
+  getOpenAIErrorMessage,
+} from "./openAIClient.js";
 import { waitForToolResult } from "./toolResults.js";
 
 const systemPrompt = [
   "You create concise, polished motion graphics as SceneSpec tool calls.",
   "Plan first, then build step by step. Keep duration reasonable (usually 4-8 seconds), use readable composition, tasteful colors, and add lighting.",
+  "For anatomy or humanoid figures, use the supported box, sphere, cylinder, torus, text, and plane primitives. Cylinders are supported and should be used for limbs and joints. Backgrounds may be a hex color or a CSS linear-gradient with at least two #RRGGBB stops.",
+  "Lights are not scene objects and cannot be animated. animate_object must use the id of an existing object created by set_scene or add_object, never a light id. To create a moving light effect, animate a visible mesh object instead; lights remain static.",
+  "When any tool returns ok:false, use its error to correct the input and retry rather than repeating the same invalid tool call.",
   "Never output or execute code. Use tools only to mutate the JSON scene. Finish with a one-sentence summary.",
 ].join(" ");
-
-const structuredOutputInstructions = [
-  "Return only a JSON object with exactly these fields: tool_calls and summary.",
-  "tool_calls must be an array of objects with name and arguments fields.",
-  "Use only the provided scene tool names and valid arguments; never include code.",
-  "Tool argument rules: set_scene requires durationInFrames (integer), background (hex color), camera {position:[x,y,z],lookAt:[x,y,z]}, objects (array), and lights (array). Each vector is exactly a 3-number array, never an object.",
-  "add_object requires id, type (box|sphere|torus|text|plane), color (hex), and position ([x,y,z]); optional rotation and scale are also 3-number arrays. Do not use name or size; use id and scale. Text objects also need text.",
-  "add_light requires id, type (ambient|directional|point), color (hex), intensity (number); optional position is a 3-number array. There is no spotlight type.",
-  "animate_object requires id and animation {kind,startFrame,durationInFrames,easing,params}. kind is rotate|float|scale-in|orbit|fade-in|move-to; do not put animation properties at the top level.",
-  "Valid tools: set_scene, add_object, update_object, remove_object, animate_object, add_light, set_camera, clear_scene.",
-  "If tool results report validation errors, correct the named arguments and try again. Do not mark the scene complete while requested changes failed.",
-  "When the scene is complete, return an empty tool_calls array and a one-sentence summary.",
-].join(" ");
-
-const toolReference = agentTools
-  .map(
-    ({ name, description, parameters }) =>
-      `${name}: ${description} Arguments schema: ${JSON.stringify(parameters)}`,
-  )
-  .join("\n");
 
 function describeValidationError(error: {
   issues: Array<{ path: PropertyKey[]; message: string }>;
@@ -42,22 +25,73 @@ function describeValidationError(error: {
     .join("; ");
 }
 
-function normalizeToolInput(name: string, input: unknown): unknown {
+export function normalizeToolInput(name: string, input: unknown): unknown {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;
 
   const normalized = { ...input } as Record<string, unknown>;
-  const animation =
-    name === "animate_object"
-      ? normalized.animation
-      : name === "add_object"
-        ? normalized.animation
-        : undefined;
+  const animation = name === "animate_object" || name === "add_object"
+    ? normalized.animation
+    : undefined;
 
   if (!animation || typeof animation !== "object" || Array.isArray(animation)) {
     return normalized;
   }
 
   const normalizedAnimation = { ...animation } as Record<string, unknown>;
+  const kindAliases: Record<string, string> = {
+    scale_pulse: "scale-pulse",
+    scalePulse: "scale-pulse",
+    scaleIn: "scale-in",
+    fadeIn: "fade-in",
+    moveTo: "move-to",
+  };
+
+  if (typeof normalizedAnimation.kind === "string") {
+    normalizedAnimation.kind = kindAliases[normalizedAnimation.kind] ?? normalizedAnimation.kind;
+  }
+
+  const variant = Object.entries(normalizedAnimation).find(([key]) =>
+    ["rotate", "float", "orbit", "scale_pulse", "scalePulse", "scale-in", "scaleIn", "fade-in", "fadeIn", "move-to", "moveTo"].includes(key),
+  );
+  if (variant && typeof normalizedAnimation.kind !== "string") {
+    const [variantName, variantValue] = variant;
+    normalizedAnimation.kind = kindAliases[variantName] ?? variantName;
+    const variantParams = variantValue && typeof variantValue === "object" && !Array.isArray(variantValue)
+      ? variantValue as Record<string, unknown>
+      : {};
+    const { [variantName]: _variant, ...otherFields } = normalizedAnimation;
+    const existingParams = otherFields.params && typeof otherFields.params === "object" && !Array.isArray(otherFields.params)
+      ? otherFields.params as Record<string, unknown>
+      : {};
+    Object.assign(normalizedAnimation, otherFields, {
+      params: { ...variantParams, ...existingParams },
+    });
+  }
+
+  if (normalizedAnimation.kind === "scale_pulse" || normalizedAnimation.kind === "scalePulse") {
+    normalizedAnimation.kind = "scale-pulse";
+  }
+
+  if (normalizedAnimation.kind === "rotate" || normalizedAnimation.kind === "orbit" || normalizedAnimation.kind === "float" || normalizedAnimation.kind === "scale-pulse") {
+    const params = normalizedAnimation.params && typeof normalizedAnimation.params === "object" && !Array.isArray(normalizedAnimation.params)
+      ? { ...normalizedAnimation.params as Record<string, unknown> }
+      : {};
+    for (const key of ["x", "y", "z", "amplitude", "radius"]) {
+      if (typeof normalizedAnimation[key] === "number" && params[key] === undefined) {
+        params[key] = normalizedAnimation[key];
+        delete normalizedAnimation[key];
+      }
+    }
+    const rotate = normalizedAnimation.rotate;
+    if (normalizedAnimation.kind === "rotate" && Array.isArray(rotate) && rotate.length === 3) {
+      ["x", "y", "z"].forEach((key, index) => { params[key] ??= rotate[index]; });
+      delete normalizedAnimation.rotate;
+    }
+    normalizedAnimation.params = params;
+  }
+
+  normalizedAnimation.startFrame ??= 0;
+  normalizedAnimation.durationInFrames ??= 120;
   if (typeof normalizedAnimation.easing === "string") {
     const easingAliases: Record<string, string> = {
       easeIn: "ease-in",
@@ -72,54 +106,33 @@ function normalizeToolInput(name: string, input: unknown): unknown {
 }
 
 export async function runAgent(prompt: string, emit: AgentEvent) {
-  const messages: OllamaMessage[] = [
+  const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: prompt },
   ];
   let callCount = 0;
-  let mode: "native" | "structured" = "native";
 
   try {
     for (let turn = 0; turn < 4; turn++) {
-      let response;
-      try {
-        response = await streamOllamaChat(messages, emit, mode);
-      } catch (error) {
-        if (
-          !(error instanceof OllamaToolSupportError) ||
-          mode === "structured"
-        ) {
-          throw error;
-        }
-        mode = "structured";
-        messages[0] = {
-          role: "system",
-          content: `${systemPrompt} ${structuredOutputInstructions}\nTool reference:\n${toolReference}`,
-        };
-        response = await streamOllamaChat(messages, emit, mode);
-      }
+      const response = await streamOpenAIChat(messages, emit);
 
       if (!response.toolCalls.length) {
-        if (mode === "structured" && response.summary) {
-          emit("message", { text: response.summary, delta: false });
-        }
         break;
       }
 
-      if (mode === "native") {
-        messages.push({
-          role: "assistant",
-          content: response.content,
-          tool_calls: response.toolCalls,
-        });
-      } else {
-        messages.push({ role: "assistant", content: response.content });
-      }
-      const structuredResults: Array<{
-        name: string;
-        input: unknown;
-        result: unknown;
-      }> = [];
+      messages.push({
+        role: "assistant",
+        content: response.content || null,
+        tool_calls: response.toolCalls.map((call) => ({
+          id: call.id,
+          type: "function",
+          function: {
+            name: call.function.name,
+            arguments: JSON.stringify(call.function.arguments),
+          },
+        })),
+      });
+
       for (const call of response.toolCalls) {
         callCount++;
         if (callCount > 25) {
@@ -138,42 +151,27 @@ export async function runAgent(prompt: string, emit: AgentEvent) {
             : "Unknown tool.";
           emit("tool", { id: randomUUID(), name, input, ok: false, error });
           const result = { ok: false, error };
-          if (mode === "structured") {
-            structuredResults.push({ name, input, result });
-          } else {
-            messages.push({
-              role: "tool",
-              tool_name: name,
-              content: JSON.stringify(result),
-            });
-          }
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify(result),
+          });
           continue;
         }
 
         const id = randomUUID();
         emit("tool", { id, name, input: parsed.data });
         const result = await waitForToolResult(id);
-        if (mode === "structured") {
-          structuredResults.push({ name, input: parsed.data, result });
-        } else {
-          messages.push({
-            role: "tool",
-            tool_name: name,
-            content: JSON.stringify(result),
-          });
-        }
-      }
-
-      if (mode === "structured") {
         messages.push({
-          role: "user",
-          content: `Tool results (JSON): ${JSON.stringify(structuredResults)}. Any result with ok:false means that tool failed. Fix its arguments using the reported validation errors and retry it. Continue with remaining scene tool calls, or return an empty tool_calls array and a one-sentence summary only after all requested scene changes succeeded.`,
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
         });
       }
     }
 
     emit("done", { ok: true });
   } catch (error) {
-    emit("error", { error: getOllamaErrorMessage(error) });
+    emit("error", { error: getOpenAIErrorMessage(error) });
   }
 }

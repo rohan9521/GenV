@@ -23,10 +23,25 @@ export function useAgentChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: text }),
       });
-      if (!response.ok || !response.body) {
-        const data = await response.json();
-        throw new Error(data.error ?? 'Could not start generation.');
+      if (!response.ok) {
+        const body = await response.text();
+        let errorMessage = body.trim();
+        try {
+          const data = JSON.parse(body) as { error?: unknown };
+          if (typeof data.error === 'string') errorMessage = data.error;
+        } catch {
+          // The server or proxy may return an empty body or non-JSON error page.
+        }
+        if (!errorMessage) {
+          errorMessage = response.status >= 500
+            ? `Generation API returned HTTP ${response.status} without details. Confirm the API server is running on port 3001 and check its terminal output.`
+            : `Could not start generation (HTTP ${response.status}).`;
+        }
+        throw new Error(
+          errorMessage,
+        );
       }
+      if (!response.body) throw new Error('Generation response had no stream.');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -61,13 +76,11 @@ export function useAgentChat() {
               ? { ok: false, error: String(data.error ?? 'Invalid tool input.') }
               : executeTool(String(data.name), data.input);
             setTools((items) => [...items, { name: String(data.name), input: data.input, ...result }]);
-            if (data.ok !== false) {
-              void fetch('/api/agent/tool-result', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tool_use_id: String(data.id), ...result }),
-              });
-            }
+            void fetch('/api/agent/tool-result', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tool_use_id: String(data.id), ...result }),
+            });
           }
           if (type === 'error') {
             setMessages((items) => [...items, { role: 'assistant', text: `I hit a snag: ${String(data.error)}` }]);
