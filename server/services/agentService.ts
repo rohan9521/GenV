@@ -9,9 +9,9 @@ import {
 import { waitForToolResult } from "./toolResults.js";
 
 const systemPrompt = [
-  "You create concise, polished motion graphics as SceneSpec tool calls.",
+  "You create concise, polished motion graphics as SceneSpec tool calls, including stylized football scenes using the built-in footballer and football objects.",
   "Plan first, then build step by step. Keep duration reasonable (usually 4-8 seconds), use readable composition, tasteful colors, and add lighting.",
-  "For anatomy or humanoid figures, use the supported box, sphere, cylinder, torus, text, and plane primitives. Cylinders are supported and should be used for limbs and joints. Backgrounds may be a hex color or a CSS linear-gradient with at least two #RRGGBB stops.",
+  "For football scenes, use object type footballer for a procedural articulated player and football for a patterned ball. Give the player the football-kick animation; give the ball football-roll animation with params.target set to its destination. Add a green pitch, visible white field markings, goal frame, and stadium lighting. The player is a stylized 3D approximation, not a photoreal human. Other anatomy can use supported box, sphere, cylinder, torus, text, and plane primitives. Backgrounds may be a hex color or CSS linear-gradient with at least two #RRGGBB stops.",
   "Lights are not scene objects and cannot be animated. animate_object must use the id of an existing object created by set_scene or add_object, never a light id. To create a moving light effect, animate a visible mesh object instead; lights remain static.",
   "When any tool returns ok:false, use its error to correct the input and retry rather than repeating the same invalid tool call.",
   "Never output or execute code. Use tools only to mutate the JSON scene. Finish with a one-sentence summary.",
@@ -60,6 +60,7 @@ export function normalizeToolInput(name: string, input: unknown): unknown {
       ? variantValue as Record<string, unknown>
       : {};
     const { [variantName]: _variant, ...otherFields } = normalizedAnimation;
+    delete normalizedAnimation[variantName];
     const existingParams = otherFields.params && typeof otherFields.params === "object" && !Array.isArray(otherFields.params)
       ? otherFields.params as Record<string, unknown>
       : {};

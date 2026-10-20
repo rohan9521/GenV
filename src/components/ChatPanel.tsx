@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ChatMessage, ToolLogEntry } from '../types';
 
 const examples = [
+  'Create a cinematic 8-second 3D football scene: a stylized player in a blue kit runs up, kicks a black-and-white football toward the goal, and celebrates. Add a green pitch with white markings, two goalposts, stadium floodlights, dramatic crowd-colored background, and a slow camera push-in. Use a footballer object with football-kick animation and a football object with football-roll animation. Keep the player, ball, and goal clearly visible; use smooth motion and polished broadcast lighting.',
   'A luminous glass sphere orbiting a chrome ring',
   'A red cube unfolds into a field of stars',
   'Minimal title card: “Made of motion” in warm gold',
@@ -71,7 +72,7 @@ export function ChatPanel({ messages, tools, busy, onGenerate }: ChatPanelProps)
       {messages.length < 3 && (
         <div className="example-prompts">
           <span className="eyebrow">TRY A STARTER</span>
-          {examples.map((example) => <button key={example} onClick={() => setPrompt(example)}>{example}<span>↗</span></button>)}
+          {examples.map((example, index) => <button key={example} onClick={() => setPrompt(example)}>{index === 0 ? '⚽ Generate a football kick scene' : example}<span>↗</span></button>)}
         </div>
       )}
 

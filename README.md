@@ -32,6 +32,12 @@ The client talks to the API through the Vite `/api` proxy. The OpenAI key is use
 
 `POST /api/render` validates the supplied scene, creates an in-memory job, bundles the Remotion entry once per server process, then calls `selectComposition` and `renderMedia`. Poll `GET /api/render/:id`; completed jobs provide a download URL. Jobs and output files are local and in memory for this first version.
 
+## Football scene starter
+
+Use the **Generate a football kick scene** starter in the chat panel, or describe a player kicking a ball toward a goal. The project now includes a deterministic, stylized procedural footballer and ball with frame-based kick and roll animations, so the preview and exported MP4 stay in sync. This is a primitive-based 3D character, not a downloaded photoreal human model or an AI text-to-video model. To make photoreal live-action footage, connect a separate video-generation service that provides that capability; this project currently uses its configured OpenAI-compatible chat model only to build SceneSpec scenes.
+
+Example prompt: “Create a cinematic 8-second 3D football scene: a stylized player in a blue kit runs up, kicks a black-and-white football toward the goal, and celebrates. Add a green pitch with white markings, two goalposts, stadium floodlights, dramatic crowd-colored background, and a slow camera push-in. Use a footballer object with football-kick animation and a football object with football-roll animation. Keep the player, ball, and goal clearly visible; use smooth motion and polished broadcast lighting.”
+
 ## Add a tool or object type
 
 Add/adjust the Zod schema in `shared/sceneSpec.ts`. Add a named input schema and OpenAI function definition in `server/agentTools.ts`. Implement its reducer operation and dispatch in `src/store.ts`, and show the corresponding tool status in the UI. For an object type, add the union variant to `SceneObjectSchema`, then provide its geometry in `src/remotion/SceneComposition.tsx`. Keep changes JSON based and use frame-derived transforms for animation.

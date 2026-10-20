@@ -31,7 +31,7 @@ export const agentTools = [
   {
     name: "set_scene",
     description:
-      "Replace the full scene. Use for duration, background, and complete scene setup. Background accepts a hex color or a CSS linear-gradient with two or more hex colors. Objects can use box, sphere, cylinder, torus, text, or plane geometry.",
+      "Replace the full scene. Use for duration, background, and complete scene setup. Background accepts a hex color or a CSS linear-gradient with two or more hex colors. Objects can use box, sphere, cylinder, torus, text, plane, footballer (stylized articulated player), or football geometry.",
     parameters: {
       type: "object",
       properties: {
@@ -58,14 +58,14 @@ export const agentTools = [
   {
     name: "add_object",
     description:
-      "Add a box, sphere, low-poly cylinder, torus, text, or plane with transforms and material.",
+      "Add a box, sphere, low-poly cylinder, torus, text, plane, stylized articulated footballer, or patterned football with transforms and material.",
     parameters: {
       type: "object",
       properties: {
         id: { type: "string" },
         type: {
           type: "string",
-          enum: ["box", "sphere", "cylinder", "torus", "text", "plane"],
+          enum: ["box", "sphere", "cylinder", "torus", "text", "plane", "footballer", "football"],
         },
         color: { type: "string" },
         position: {
@@ -101,7 +101,7 @@ export const agentTools = [
         animation: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to"] },
+            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to", "football-kick", "football-roll"] },
             startFrame: { type: "integer", minimum: 0 },
             durationInFrames: { type: "integer", minimum: 1, maximum: 900 },
             easing: { type: "string", enum: ["linear", "ease-in", "ease-out", "ease-in-out"] },
@@ -138,7 +138,7 @@ export const agentTools = [
   {
     name: "animate_object",
     description:
-      "Animate an existing scene object (mesh), NOT a light. The id must match an object created by set_scene or add_object. Lights are static and their ids cannot be animated. Use animation {kind,startFrame,durationInFrames,easing,params}. Use kind rotate|float|scale-in|scale-pulse|orbit|fade-in|move-to. Put rotation x/y/z radians, float or scale-pulse amplitude, orbit radius, and move-to target vector inside params. startFrame and durationInFrames are required.",
+      "Animate an existing scene object (mesh), NOT a light. The id must match an object created by set_scene or add_object. Lights are static and their ids cannot be animated. Use animation {kind,startFrame,durationInFrames,easing,params}. Use kind rotate|float|scale-in|scale-pulse|orbit|fade-in|move-to|football-kick|football-roll. football-kick animates a procedural footballer; football-roll sends a football along params.target. Put rotation x/y/z radians, float or scale-pulse amplitude, orbit radius, and move-to/football-roll target vector inside params. startFrame and durationInFrames are required.",
     parameters: {
       type: "object",
       properties: {
@@ -146,7 +146,7 @@ export const agentTools = [
         animation: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to"] },
+            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to", "football-kick", "football-roll"] },
             startFrame: { type: "integer", minimum: 0 },
             durationInFrames: { type: "integer", minimum: 1, maximum: 900 },
             easing: { type: "string", enum: ["linear", "ease-in", "ease-out", "ease-in-out"] },

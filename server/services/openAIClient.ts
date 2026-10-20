@@ -12,7 +12,7 @@ type StreamedToolCall = {
 };
 
 function createClient() {
-  const apiKey = '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';
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set. Add it to your .env file.");
   }
