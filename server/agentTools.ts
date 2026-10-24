@@ -1,11 +1,11 @@
 import { z } from "zod";
 import {
   AnimationSchema,
+  CameraSchema,
   LightSchema,
   SceneObjectBaseSchema,
   SceneObjectSchema,
   SceneSpecSchema,
-  Vector3Schema,
 } from "../shared/sceneSpec.js";
 
 export const toolInputs: Record<string, z.ZodType> = {
@@ -22,16 +22,14 @@ export const toolInputs: Record<string, z.ZodType> = {
     .object({ id: z.string(), animation: AnimationSchema })
     .strict(),
   add_light: LightSchema,
-  set_camera: z
-    .object({ position: Vector3Schema, lookAt: Vector3Schema })
-    .strict(),
+  set_camera: CameraSchema,
   clear_scene: z.object({}).strict(),
 };
 export const agentTools = [
   {
     name: "set_scene",
     description:
-      "Replace the full scene. Use for duration, background, and complete scene setup. Background accepts a hex color or a CSS linear-gradient with two or more hex colors. Objects can use box, sphere, cylinder, torus, text, plane, footballer (stylized articulated player), or football geometry.",
+      "Replace the full scene. Use for duration, background, and complete scene setup. Background accepts a hex color or a CSS linear-gradient with two or more hex colors. Objects can use box, sphere, cylinder, torus, text, plane, footballer (stylized articulated player), football, or the built-in sports car model.",
     parameters: {
       type: "object",
       properties: {
@@ -41,7 +39,22 @@ export const agentTools = [
           type: "string",
           description: "Hex color or CSS linear-gradient with at least two #RRGGBB stops.",
         },
-        camera: { type: "object" },
+        camera: {
+          type: "object",
+          properties: {
+            position: { type: "array", items: { type: "number" } },
+            lookAt: { type: "array", items: { type: "number" } },
+            orbit: {
+              type: "object",
+              description: "Optional 360-degree camera orbit around lookAt for the duration of the scene.",
+              properties: { turns: { type: "number", minimum: 1, maximum: 3 } },
+              required: ["turns"],
+              additionalProperties: false,
+            },
+          },
+          required: ["position", "lookAt"],
+          additionalProperties: false,
+        },
         objects: { type: "array" },
         lights: { type: "array" },
       },
@@ -58,14 +71,14 @@ export const agentTools = [
   {
     name: "add_object",
     description:
-      "Add a box, sphere, low-poly cylinder, torus, text, plane, stylized articulated footballer, or patterned football with transforms and material.",
+      "Add a box, sphere, low-poly cylinder, torus, text, plane, stylized articulated footballer, patterned football, or built-in sports car model with transforms and material.",
     parameters: {
       type: "object",
       properties: {
         id: { type: "string" },
         type: {
           type: "string",
-          enum: ["box", "sphere", "cylinder", "torus", "text", "plane", "footballer", "football"],
+          enum: ["box", "sphere", "cylinder", "torus", "text", "plane", "footballer", "football", "car"],
         },
         color: { type: "string" },
         position: {
@@ -101,7 +114,7 @@ export const agentTools = [
         animation: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to", "football-kick", "football-roll"] },
+            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to", "football-kick", "football-roll", "car-drive"] },
             startFrame: { type: "integer", minimum: 0 },
             durationInFrames: { type: "integer", minimum: 1, maximum: 900 },
             easing: { type: "string", enum: ["linear", "ease-in", "ease-out", "ease-in-out"] },
@@ -138,7 +151,7 @@ export const agentTools = [
   {
     name: "animate_object",
     description:
-      "Animate an existing scene object (mesh), NOT a light. The id must match an object created by set_scene or add_object. Lights are static and their ids cannot be animated. Use animation {kind,startFrame,durationInFrames,easing,params}. Use kind rotate|float|scale-in|scale-pulse|orbit|fade-in|move-to|football-kick|football-roll. football-kick animates a procedural footballer; football-roll sends a football along params.target. Put rotation x/y/z radians, float or scale-pulse amplitude, orbit radius, and move-to/football-roll target vector inside params. startFrame and durationInFrames are required.",
+      "Animate an existing scene object (mesh), NOT a light. The id must match an object created by set_scene or add_object. Lights are static and their ids cannot be animated. Use animation {kind,startFrame,durationInFrames,easing,params}. Use kind rotate|float|scale-in|scale-pulse|orbit|fade-in|move-to|football-kick|football-roll|car-drive. football-kick animates a procedural footballer; football-roll sends a football along params.target; car-drive simulates engine force, suspension, tire rotation, and road motion for the built-in sports car. Put rotation x/y/z radians, float or scale-pulse amplitude, orbit radius, and move-to/football-roll target vector inside params. startFrame and durationInFrames are required.",
     parameters: {
       type: "object",
       properties: {
@@ -146,7 +159,7 @@ export const agentTools = [
         animation: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to", "football-kick", "football-roll"] },
+            kind: { type: "string", enum: ["rotate", "float", "scale-in", "scale-pulse", "orbit", "fade-in", "move-to", "football-kick", "football-roll", "car-drive"] },
             startFrame: { type: "integer", minimum: 0 },
             durationInFrames: { type: "integer", minimum: 1, maximum: 900 },
             easing: { type: "string", enum: ["linear", "ease-in", "ease-out", "ease-in-out"] },
@@ -178,12 +191,18 @@ export const agentTools = [
   },
   {
     name: "set_camera",
-    description: "Set camera position and look-at point.",
+    description: "Set camera position and look-at point. Add orbit {turns: 1} for a full 360-degree orbit over the scene duration.",
     parameters: {
       type: "object",
       properties: {
         position: { type: "array", items: { type: "number" } },
         lookAt: { type: "array", items: { type: "number" } },
+        orbit: {
+          type: "object",
+          properties: { turns: { type: "number", minimum: 1, maximum: 3 } },
+          required: ["turns"],
+          additionalProperties: false,
+        },
       },
       required: ["position", "lookAt"],
       additionalProperties: false,

@@ -22,6 +22,7 @@
     "@remotion/player": "^4.0.275",
     "@remotion/renderer": "^4.0.275",
     "@remotion/three": "^4.0.275",
+    "cannon-es": "^0.20.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

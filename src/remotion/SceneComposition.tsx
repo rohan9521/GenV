@@ -1,10 +1,11 @@
 import { ThreeCanvas } from '@remotion/three';
-import { useCurrentFrame, interpolate, Easing } from 'remotion';
-import { Text } from '@react-three/drei';
+import { useCurrentFrame, interpolate, Easing, staticFile } from 'remotion';
+import { Environment, Text, useGLTF } from '@react-three/drei';
 import type { ReactNode } from 'react';
-import type { Mesh } from 'three';
-import { useRef } from 'react';
+import type { Mesh, MeshStandardMaterial, Object3D } from 'three';
+import { useMemo, useRef } from 'react';
 import type { SceneObject, SceneSpec, Vector3 } from '../../shared/sceneSpec';
+import { simulateCarDrive } from './carPhysics';
 
 const easingMap = { linear: Easing.linear, 'ease-in': Easing.in(Easing.ease), 'ease-out': Easing.out(Easing.ease), 'ease-in-out': Easing.inOut(Easing.ease) };
 function animated(object: SceneObject, frame: number) {
@@ -23,11 +24,12 @@ function animated(object: SceneObject, frame: number) {
   return { position: object.position, rotation: object.rotation, scale: object.scale, opacity: 1 };
 }
 
-function SceneMesh({ object }: { object: SceneObject }) {
+function SceneMesh({ object, durationInFrames }: { object: SceneObject; durationInFrames: number }) {
   const frame = useCurrentFrame(); const mesh = useRef<Mesh>(null); const values = animated(object, frame);
   const common = { position: values.position, rotation: values.rotation, scale: values.scale, ref: mesh, castShadow: true, receiveShadow: true };
   const opacity = values.opacity * (object.material?.opacity ?? 1);
   const material = <meshStandardMaterial color={object.color} metalness={object.material?.metalness ?? 0.25} roughness={object.material?.roughness ?? 0.4} emissive={object.material?.emissive ?? '#000000'} transparent={object.material?.transparent === true || opacity < 1} opacity={opacity} />;
+  if (object.type === 'car') return <CarScene object={object} frame={frame} durationInFrames={durationInFrames} />;
   if (object.type === 'footballer') {
     const animation = object.animation;
     const progress = animation?.kind === 'football-kick' && frame >= animation.startFrame
@@ -67,17 +69,103 @@ function SceneMesh({ object }: { object: SceneObject }) {
     </group>;
   }
   if (object.type === 'text') return <Text {...common} fontSize={0.8} anchorX="center" anchorY="middle" outlineWidth={0.015} outlineColor="#ffffff">{object.text}</Text>;
-  const geometry: Record<Exclude<SceneObject['type'], 'text' | 'footballer' | 'football'>, ReactNode> = { box: <boxGeometry args={[1, 1, 1]} />, sphere: <sphereGeometry args={[0.65, 32, 24]} />, cylinder: <cylinderGeometry args={[0.5, 0.5, 1, 8]} />, torus: <torusGeometry args={[0.65, 0.22, 20, 48]} />, plane: <planeGeometry args={[2, 2]} /> };
+  const geometry: Record<Exclude<SceneObject['type'], 'text' | 'footballer' | 'football' | 'car'>, ReactNode> = { box: <boxGeometry args={[1, 1, 1]} />, sphere: <sphereGeometry args={[0.65, 32, 24]} />, cylinder: <cylinderGeometry args={[0.5, 0.5, 1, 8]} />, torus: <torusGeometry args={[0.65, 0.22, 20, 48]} />, plane: <planeGeometry args={[2, 2]} /> };
   return <mesh {...common}>{geometry[object.type]}{material}</mesh>;
 }
 
 function partMaterial(color: string) { return <meshStandardMaterial color={color} roughness={0.75} />; }
 
+function quaternionToEuler([x, y, z, w]: [number, number, number, number]): [number, number, number] {
+  const pitch = Math.asin(Math.max(-1, Math.min(1, 2 * (x * z + w * y))));
+  return [
+    Math.atan2(2 * (w * x - y * z), 1 - 2 * (x * x + y * y)),
+    pitch,
+    Math.atan2(2 * (w * z - x * y), 1 - 2 * (y * y + z * z)),
+  ];
+}
+
+function CarScene({ object, frame, durationInFrames }: { object: SceneObject; frame: number; durationInFrames: number }) {
+  const animation = object.animation?.kind === 'car-drive' ? object.animation : undefined;
+  const physicsFrames = useMemo(() => simulateCarDrive(durationInFrames, animation), [durationInFrames, animation]);
+  const state = physicsFrames[Math.min(Math.max(frame, 0), physicsFrames.length - 1)];
+  if (!state) throw new Error(`Car physics simulation returned no frame for duration ${durationInFrames}.`);
+  const { scene: sourceModel } = useGLTF(staticFile('models/car/rx7.glb'), staticFile('draco-gltf/'));
+  const carModel = useMemo(() => {
+    const model = sourceModel.clone(true);
+    model.rotation.y = Math.PI / 2;
+    model.position.set(0, -physicsFrames[0].chassis.position[1] - 0.035, 0);
+    model.traverse((node) => {
+      if (node.type !== 'Mesh') return;
+      const mesh = node as Mesh;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      const clonedMaterials = Array.isArray(mesh.material)
+        ? mesh.material.map((material) => material.clone())
+        : mesh.material.clone();
+      mesh.material = clonedMaterials;
+      for (const material of Array.isArray(clonedMaterials) ? clonedMaterials : [clonedMaterials]) {
+        if (material.name.includes('Car_paint') && 'color' in material) {
+          (material as MeshStandardMaterial).color.set(object.color);
+        }
+        if ('envMapIntensity' in material) (material as MeshStandardMaterial).envMapIntensity = 2;
+      }
+    });
+    const wheelPivots = ['RX7_GROUPCircle008', 'RX7_GROUPCircle009', 'RX7_GROUPCircle010', 'RX7_GROUPCircle012']
+      .map((name) => model.getObjectByName(name));
+    if (wheelPivots.some((wheel) => !wheel)) {
+      const availableWheelNames: string[] = [];
+      model.traverse((node) => { if (/wheel|circle/i.test(node.name)) availableWheelNames.push(node.name); });
+      throw new Error(`The RX-7 model is missing wheel pivots. Available nodes: ${availableWheelNames.join(', ') || 'none'}.`);
+    }
+    const wheels = wheelPivots.filter((wheel): wheel is Object3D => Boolean(wheel));
+    return { model, wheels };
+  }, [sourceModel, physicsFrames, object.color]);
+  const [chassisX, , chassisZ] = state.chassis.position;
+  const chassisRotation = quaternionToEuler(state.chassis.quaternion);
+  const roadDashSpacing = 3.6;
+  const roadScroll = ((chassisX % roadDashSpacing) + roadDashSpacing) % roadDashSpacing;
+  state.wheels.forEach((wheel, index) => {
+    carModel.wheels[index].rotation.x = -wheel.spin;
+  });
+
+  return <group position={[object.position[0] - chassisX, object.position[1], object.position[2] - chassisZ]} rotation={object.rotation} scale={object.scale}>
+    <group position={[chassisX - roadScroll, 0, 0]}>
+      <mesh position={[0, -0.07, 0]} receiveShadow><boxGeometry args={[72, 0.12, 6.2]} /><meshStandardMaterial color="#20242d" roughness={0.9} /></mesh>
+      {[-1, 1].map((side) => <mesh key={`edge-${side}`} position={[0, 0.001, side * 2.65]}><boxGeometry args={[72, 0.015, 0.035]} /><meshStandardMaterial color="#7c8593" roughness={0.65} /></mesh>)}
+      {Array.from({ length: 21 }, (_, index) => <mesh key={`dash-${index}`} position={[(index - 10) * roadDashSpacing, 0.001, 0]}><boxGeometry args={[1.8, 0.016, 0.055]} /><meshStandardMaterial color="#d7d7ce" roughness={0.65} /></mesh>)}
+    </group>
+    <group position={state.chassis.position} rotation={chassisRotation}>
+      <primitive object={carModel.model} />
+    </group>
+  </group>;
+}
+
 export function SceneComposition({ spec }: { spec: SceneSpec }) {
   const hasGradientBackground = spec.background.startsWith('linear-gradient(');
-  return <ThreeCanvas width={1280} height={720} camera={{ position: spec.camera.position, fov: 45 }} gl={{ alpha: true }} style={{ width: '100%', height: '100%', background: spec.background }}>
+  const hasCar = spec.objects.some((object) => object.type === 'car');
+  const frame = useCurrentFrame();
+  const orbit = spec.camera.orbit;
+  const cameraPosition: Vector3 = orbit
+    ? (() => {
+      const [x, y, z] = spec.camera.position.map((value, index) => value - spec.camera.lookAt[index]) as Vector3;
+      const angle = (frame / spec.durationInFrames) * orbit.turns * Math.PI * 2;
+      return [x * Math.cos(angle) + z * Math.sin(angle), y, -x * Math.sin(angle) + z * Math.cos(angle)];
+    })()
+    : spec.camera.position;
+  const cameraRotation: Vector3 | undefined = orbit
+    ? [
+      -Math.atan2(cameraPosition[1], Math.hypot(cameraPosition[0], cameraPosition[2])),
+      Math.atan2(cameraPosition[0], cameraPosition[2]),
+      0,
+    ]
+    : undefined;
+  const cameraConfig = cameraRotation
+    ? { position: cameraPosition, rotation: cameraRotation, fov: 45 }
+    : { position: cameraPosition, fov: 45 };
+  return <ThreeCanvas width={1280} height={720} camera={cameraConfig} gl={{ alpha: true }} style={{ width: '100%', height: '100%', background: spec.background }}>
     {!hasGradientBackground && <color attach="background" args={[spec.background]} />}
+    {hasCar && <Environment files={staticFile('environment/blouberg_sunrise_2_1k.hdr')} ground={{ height: 4, radius: 80, scale: 500 }} environmentIntensity={0.8} />}
     {spec.lights.map((light) => light.type === 'ambient' ? <ambientLight key={light.id} color={light.color} intensity={light.intensity} /> : light.type === 'directional' ? <directionalLight key={light.id} color={light.color} intensity={light.intensity} position={light.position ?? [4, 5, 6]} /> : <pointLight key={light.id} color={light.color} intensity={light.intensity} position={light.position ?? [0, 4, 0]} />)}
-    <group position={spec.camera.lookAt.map((v) => -v) as Vector3}>{spec.objects.map((object) => <SceneMesh key={object.id} object={object} />)}</group>
+    <group position={spec.camera.lookAt.map((v) => -v) as Vector3}>{spec.objects.map((object) => <SceneMesh key={object.id} object={object} durationInFrames={spec.durationInFrames} />)}</group>
   </ThreeCanvas>;
 }

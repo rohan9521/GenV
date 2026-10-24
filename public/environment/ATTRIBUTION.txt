@@ -1,0 +1,4 @@
+Environment map: Blouberg Sunrise 2, by Greg Zaal
+Original source: https://polyhaven.com/a/blouberg_sunrise_2
+Bundled from the Three.js example asset: https://threejs.org/examples/textures/equirectangular/blouberg_sunrise_2_1k.hdr
+License: CC0, as distributed by Poly Haven.
