@@ -1,8 +1,8 @@
 import { ThreeCanvas } from '@remotion/three';
 import { useCurrentFrame, interpolate, Easing, staticFile } from 'remotion';
-import { Environment, Text, useGLTF } from '@react-three/drei';
+import { ContactShadows, Environment, Text, useGLTF } from '@react-three/drei';
 import type { ReactNode } from 'react';
-import type { Mesh, MeshStandardMaterial, Object3D } from 'three';
+import { MeshPhysicalMaterial, type Mesh, type MeshStandardMaterial, type Object3D } from 'three';
 import { useMemo, useRef } from 'react';
 import type { SceneObject, SceneSpec, Vector3 } from '../../shared/sceneSpec';
 import { simulateCarDrive } from './carPhysics';
@@ -102,13 +102,22 @@ function CarScene({ object, frame, durationInFrames }: { object: SceneObject; fr
       const clonedMaterials = Array.isArray(mesh.material)
         ? mesh.material.map((material) => material.clone())
         : mesh.material.clone();
-      mesh.material = clonedMaterials;
-      for (const material of Array.isArray(clonedMaterials) ? clonedMaterials : [clonedMaterials]) {
+      const materials = Array.isArray(clonedMaterials) ? clonedMaterials : [clonedMaterials];
+      const updatedMaterials = materials.map((material) => {
         if (material.name.includes('Car_paint') && 'color' in material) {
-          (material as MeshStandardMaterial).color.set(object.color);
+          const paint = new MeshPhysicalMaterial().copy(material as MeshStandardMaterial);
+          paint.color.set(object.color);
+          paint.metalness = 0.72;
+          paint.roughness = 0.24;
+          paint.clearcoat = 1;
+          paint.clearcoatRoughness = 0.16;
+          paint.envMapIntensity = 1.5;
+          return paint;
         }
         if ('envMapIntensity' in material) (material as MeshStandardMaterial).envMapIntensity = 2;
-      }
+        return material;
+      });
+      mesh.material = Array.isArray(clonedMaterials) ? updatedMaterials : updatedMaterials[0];
     });
     const wheelPivots = ['RX7_GROUPCircle008', 'RX7_GROUPCircle009', 'RX7_GROUPCircle010', 'RX7_GROUPCircle012']
       .map((name) => model.getObjectByName(name));
@@ -135,6 +144,7 @@ function CarScene({ object, frame, durationInFrames }: { object: SceneObject; fr
       {[-1, 1].map((side) => <mesh key={`edge-${side}`} position={[0, 0.001, side * 2.65]}><boxGeometry args={[72, 0.015, 0.035]} /><meshStandardMaterial color="#7c8593" roughness={0.65} /></mesh>)}
       {Array.from({ length: 21 }, (_, index) => <mesh key={`dash-${index}`} position={[(index - 10) * roadDashSpacing, 0.001, 0]}><boxGeometry args={[1.8, 0.016, 0.055]} /><meshStandardMaterial color="#d7d7ce" roughness={0.65} /></mesh>)}
     </group>
+    <ContactShadows position={[chassisX, -0.006, chassisZ]} scale={[7, 4]} opacity={0.42} blur={2.4} far={2.6} resolution={256} frames={1} />
     <group position={state.chassis.position} rotation={chassisRotation}>
       <primitive object={carModel.model} />
     </group>
