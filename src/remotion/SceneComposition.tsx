@@ -130,7 +130,8 @@ function CarScene({ object, frame, durationInFrames }: { object: SceneObject; fr
 
   return <group position={[object.position[0] - chassisX, object.position[1], object.position[2] - chassisZ]} rotation={object.rotation} scale={object.scale}>
     <group position={[chassisX - roadScroll, 0, 0]}>
-      <mesh position={[0, -0.07, 0]} receiveShadow><boxGeometry args={[72, 0.12, 6.2]} /><meshStandardMaterial color="#20242d" roughness={0.9} /></mesh>
+      <mesh position={[0, -0.0275, 0]} receiveShadow><boxGeometry args={[72, 0.035, 6.2]} /><meshStandardMaterial color="#20242d" roughness={0.9} /></mesh>
+      {[-1, 1].map((side) => <mesh key={`shoulder-${side}`} position={[0, -0.014, side * 3.35]} receiveShadow><boxGeometry args={[72, 0.02, 1.1]} /><meshStandardMaterial color="#454943" roughness={1} /></mesh>)}
       {[-1, 1].map((side) => <mesh key={`edge-${side}`} position={[0, 0.001, side * 2.65]}><boxGeometry args={[72, 0.015, 0.035]} /><meshStandardMaterial color="#7c8593" roughness={0.65} /></mesh>)}
       {Array.from({ length: 21 }, (_, index) => <mesh key={`dash-${index}`} position={[(index - 10) * roadDashSpacing, 0.001, 0]}><boxGeometry args={[1.8, 0.016, 0.055]} /><meshStandardMaterial color="#d7d7ce" roughness={0.65} /></mesh>)}
     </group>
